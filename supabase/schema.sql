@@ -54,8 +54,10 @@ security definer
 set search_path = public
 as $$
   select exists (
-    select 1 from public.organization_members
-    where organization_id = target_org and user_id = auth.uid()
+    select 1
+    from public.organization_members
+    where organization_id = target_org
+      and user_id = auth.uid()
   );
 $$;
 
@@ -93,29 +95,53 @@ alter table public.organization_members enable row level security;
 alter table public.employees enable row level security;
 alter table public.employee_versions enable row level security;
 
+drop policy if exists "profiles_self_select" on public.profiles;
 create policy "profiles_self_select" on public.profiles
 for select using (id = auth.uid());
 
+drop policy if exists "organizations_members_select" on public.organizations;
 create policy "organizations_members_select" on public.organizations
 for select using (public.is_org_member(id));
 
+drop policy if exists "members_org_select" on public.organization_members;
 create policy "members_org_select" on public.organization_members
 for select using (public.is_org_member(organization_id));
 
+drop policy if exists "employees_org_select" on public.employees;
 create policy "employees_org_select" on public.employees
 for select using (public.is_org_member(organization_id));
 
+drop policy if exists "employees_org_insert" on public.employees;
 create policy "employees_org_insert" on public.employees
-for insert with check (public.is_org_member(organization_id) and created_by = auth.uid());
+for insert with check (
+  public.is_org_member(organization_id)
+  and created_by = auth.uid()
+);
 
+drop policy if exists "employees_org_update" on public.employees;
 create policy "employees_org_update" on public.employees
 for update using (public.is_org_member(organization_id));
 
+drop policy if exists "versions_org_select" on public.employee_versions;
 create policy "versions_org_select" on public.employee_versions
 for select using (
   exists (
-    select 1 from public.employees e
-    where e.id = employee_id and public.is_org_member(e.organization_id)
+    select 1
+    from public.employees e
+    where e.id = employee_id
+      and public.is_org_member(e.organization_id)
+  )
+);
+
+drop policy if exists "versions_org_insert" on public.employee_versions;
+create policy "versions_org_insert" on public.employee_versions
+for insert with check (
+  created_by = auth.uid()
+  and exists (
+    select 1
+    from public.employees e
+    where e.id = employee_id
+      and public.is_org_member(e.organization_id)
   )
 );
 
@@ -134,7 +160,8 @@ declare
   v_org_id uuid;
   v_employee_id uuid;
 begin
-  select organization_id into v_org_id
+  select organization_id
+  into v_org_id
   from public.organization_members
   where user_id = auth.uid()
   order by created_at asc
@@ -144,12 +171,36 @@ begin
     raise exception 'No organization found for current user';
   end if;
 
-  insert into public.employees (organization_id, name, role, goal, status, created_by)
-  values (v_org_id, p_name, p_role, p_goal, 'draft', auth.uid())
+  insert into public.employees (
+    organization_id,
+    name,
+    role,
+    goal,
+    status,
+    created_by
+  )
+  values (
+    v_org_id,
+    p_name,
+    p_role,
+    p_goal,
+    'draft',
+    auth.uid()
+  )
   returning id into v_employee_id;
 
-  insert into public.employee_versions (employee_id, version, specification, created_by)
-  values (v_employee_id, 1, p_specification, auth.uid());
+  insert into public.employee_versions (
+    employee_id,
+    version,
+    specification,
+    created_by
+  )
+  values (
+    v_employee_id,
+    1,
+    p_specification,
+    auth.uid()
+  );
 
   return v_employee_id;
 end;
