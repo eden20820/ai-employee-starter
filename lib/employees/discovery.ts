@@ -1,6 +1,7 @@
 import 'server-only'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { getOpenAIClient } from '@/lib/openai/client'
+import { modelFor } from '@/lib/ai/models'
 import {
   interviewAnswerSchema,
   interviewQuestionSchema,
@@ -81,9 +82,7 @@ function isDeferredConfigurationQuestion(question: { question: string; helpText:
 function sanitizeTurn(turn: InterviewTurnResult): InterviewTurnResult {
   if (turn.status !== 'questions') return turn
   const questions = turn.questions.filter((question) => !isDeferredConfigurationQuestion(question))
-  if (questions.length === 0) {
-    throw new Error('Discovery returned only deferred tool-configuration questions')
-  }
+  if (questions.length === 0) throw new Error('Discovery returned only deferred tool-configuration questions')
   return { ...turn, questions }
 }
 
@@ -120,7 +119,7 @@ export async function advanceEmployeeDiscovery(input: { prompt: string; answers?
 
   const openai = getOpenAIClient()
   const response = await openai.responses.parse({
-    model: process.env.OPENAI_EMPLOYEE_BUILDER_MODEL || 'gpt-5.6',
+    model: modelFor('discovery'),
     instructions: SYSTEM_INSTRUCTIONS,
     input: JSON.stringify({
       initialRequest: prompt,
