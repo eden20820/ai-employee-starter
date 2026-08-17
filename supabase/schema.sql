@@ -43,6 +43,7 @@ create table if not exists public.employee_versions (
   unique (employee_id, version)
 );
 
+create index if not exists organization_members_user_id_idx on public.organization_members(user_id);
 create index if not exists employees_organization_id_idx on public.employees(organization_id);
 create index if not exists employee_versions_employee_id_idx on public.employee_versions(employee_id);
 
@@ -120,7 +121,8 @@ for insert with check (
 
 drop policy if exists "employees_org_update" on public.employees;
 create policy "employees_org_update" on public.employees
-for update using (public.is_org_member(organization_id));
+for update using (public.is_org_member(organization_id))
+with check (public.is_org_member(organization_id));
 
 drop policy if exists "versions_org_select" on public.employee_versions;
 create policy "versions_org_select" on public.employee_versions
@@ -146,6 +148,7 @@ for insert with check (
 );
 
 create or replace function public.create_employee_with_version(
+  p_organization_id uuid,
   p_name text,
   p_role text,
   p_goal text,
@@ -157,18 +160,14 @@ security invoker
 set search_path = public
 as $$
 declare
-  v_org_id uuid;
   v_employee_id uuid;
 begin
-  select organization_id
-  into v_org_id
-  from public.organization_members
-  where user_id = auth.uid()
-  order by created_at asc
-  limit 1;
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
 
-  if v_org_id is null then
-    raise exception 'No organization found for current user';
+  if not public.is_org_member(p_organization_id) then
+    raise exception 'Not authorized for organization';
   end if;
 
   insert into public.employees (
@@ -180,7 +179,7 @@ begin
     created_by
   )
   values (
-    v_org_id,
+    p_organization_id,
     p_name,
     p_role,
     p_goal,
@@ -206,4 +205,5 @@ begin
 end;
 $$;
 
-grant execute on function public.create_employee_with_version(text,text,text,jsonb) to authenticated;
+revoke all on function public.create_employee_with_version(uuid,text,text,text,jsonb) from public;
+grant execute on function public.create_employee_with_version(uuid,text,text,text,jsonb) to authenticated;
