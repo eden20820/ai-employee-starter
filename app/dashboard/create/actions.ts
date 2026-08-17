@@ -9,7 +9,8 @@ import {
   parseEmployeeSpecification,
   type EmployeeSpecification,
 } from '@/lib/employees/specification'
-import { generateEmployeeSpecification } from '@/lib/employees/generate'
+import { advanceEmployeeDiscovery } from '@/lib/employees/discovery'
+import type { InterviewAnswer } from '@/lib/employees/interview'
 
 async function requireAuthenticatedUser() {
   const supabase = await createClient()
@@ -18,21 +19,25 @@ async function requireAuthenticatedUser() {
   return supabase
 }
 
-export async function generateEmployeePlan(prompt: string) {
+export async function advanceEmployeeInterview(
+  prompt: string,
+  answers: InterviewAnswer[] = [],
+) {
   await requireAuthenticatedUser()
 
   try {
-    const { result, specification } = await generateEmployeeSpecification(prompt)
+    const { turn, specification } = await advanceEmployeeDiscovery({ prompt, answers })
     return {
-      status: result.status,
-      clarificationQuestions: result.clarificationQuestions,
+      status: turn.status,
+      understanding: turn.understanding,
+      questions: turn.questions,
       specification,
     }
   } catch (error) {
-    console.error('generateEmployeePlan failed', {
+    console.error('advanceEmployeeInterview failed', {
       message: error instanceof Error ? error.message : 'unknown_error',
     })
-    throw new Error('Unable to generate employee plan')
+    throw new Error('Unable to continue employee discovery')
   }
 }
 
