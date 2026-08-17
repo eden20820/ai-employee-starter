@@ -33,6 +33,12 @@ export type Database = {
         Update: { id?: string; employee_id?: string; version?: number; specification?: Json; created_by?: string; created_at?: string }
         Relationships: [{ foreignKeyName: 'employee_versions_employee_id_fkey'; columns: ['employee_id']; isOneToOne: false; referencedRelation: 'employees'; referencedColumns: ['id'] }]
       }
+      ai_usage_events: {
+        Row: { id: string; organization_id: string; employee_id: string | null; task: string; model: string; input_tokens: number; cached_input_tokens: number; output_tokens: number; estimated_cost_usd: number; created_by: string; created_at: string }
+        Insert: { id?: string; organization_id: string; employee_id?: string | null; task: string; model: string; input_tokens?: number; cached_input_tokens?: number; output_tokens?: number; estimated_cost_usd?: number; created_by: string; created_at?: string }
+        Update: { id?: string; organization_id?: string; employee_id?: string | null; task?: string; model?: string; input_tokens?: number; cached_input_tokens?: number; output_tokens?: number; estimated_cost_usd?: number; created_by?: string; created_at?: string }
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -40,6 +46,7 @@ export type Database = {
         Args: { p_organization_id: string; p_name: string; p_role: string; p_goal: string; p_specification: Json }
         Returns: string
       }
+      is_org_member: { Args: { target_org: string }; Returns: boolean }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>

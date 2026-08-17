@@ -1,6 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+function isBuilderDemoRequest(request: NextRequest) {
+  return process.env.VERCEL_ENV === 'preview' && request.nextUrl.pathname.startsWith('/dashboard/create')
+}
+
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
 
@@ -24,7 +28,9 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims()
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
 
-  if (isDashboard && !data?.claims) {
+  // Preview-only builder access lets us iterate on discovery without weakening
+  // Supabase authorization or exposing any database write path.
+  if (isDashboard && !data?.claims && !isBuilderDemoRequest(request)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
