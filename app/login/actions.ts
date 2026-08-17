@@ -21,9 +21,15 @@ export async function signIn(formData: FormData) {
 export async function signUp(formData: FormData) {
   const supabase = await createClient()
   const { email, password } = readCredentials(formData)
-  const { error } = await supabase.auth.signUp({ email, password })
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+  })
+
   if (error) redirect('/login?error=' + encodeURIComponent(error.message))
-  redirect('/login?message=' + encodeURIComponent('Account created. Check your email if confirmation is enabled.'))
+
+  redirect('/check-email?email=' + encodeURIComponent(email))
 }
 
 export async function signOut() {
