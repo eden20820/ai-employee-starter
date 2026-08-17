@@ -35,12 +35,22 @@ export default function CreateEmployee() {
   const [isCreating, startCreating] = useTransition()
 
   function applyInterviewResult(result: Awaited<ReturnType<typeof advanceEmployeeInterview>>) {
+    setDemoMode(result.demoMode)
+
+    if (result.status === 'error') {
+      setError(result.errorMessage || 'Could not continue employee discovery')
+      return
+    }
+
+    setError('')
     setUnderstanding(result.understanding)
     setQuestions(result.questions)
-    setDemoMode(result.demoMode)
     setDraftAnswers({})
     if (result.status === 'ready') {
-      if (!result.specification) throw new Error('No employee specification returned')
+      if (!result.specification) {
+        setError('No employee specification returned')
+        return
+      }
       setPlan(result.specification)
     } else {
       setPlan(null)
@@ -92,7 +102,7 @@ export default function CreateEmployee() {
         const roundAnswers = buildRoundAnswers()
         const allAnswers = [...answers, ...roundAnswers]
         const result = await advanceEmployeeInterview(text, allAnswers)
-        setAnswers(allAnswers)
+        if (result.status !== 'error') setAnswers(allAnswers)
         applyInterviewResult(result)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not continue employee discovery')
