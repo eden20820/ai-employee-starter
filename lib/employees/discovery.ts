@@ -2,6 +2,7 @@ import 'server-only'
 import { zodTextFormat } from 'openai/helpers/zod'
 import { getOpenAIClient } from '@/lib/openai/client'
 import { modelFor } from '@/lib/ai/models'
+import { meterAIUsage, type AIUsage } from '@/lib/ai/usage'
 import {
   interviewAnswerSchema,
   interviewQuestionSchema,
@@ -111,15 +112,16 @@ function validateTurn(turn: InterviewTurnResult) {
   if (turn.status === 'ready' && (!turn.specification || turn.questions.length > 0)) throw new Error('Discovery interview returned an inconsistent ready state')
 }
 
-export async function advanceEmployeeDiscovery(input: { prompt: string; answers?: InterviewAnswer[] }): Promise<{ turn: InterviewTurnResult; specification: EmployeeSpecification | null }> {
+export async function advanceEmployeeDiscovery(input: { prompt: string; answers?: InterviewAnswer[] }): Promise<{ turn: InterviewTurnResult; specification: EmployeeSpecification | null; usage: AIUsage }> {
   const prompt = input.prompt.trim()
   if (prompt.length < 10 || prompt.length > 5000) throw new Error('Describe the employee in 10 to 5,000 characters')
   const answers = (input.answers ?? []).map((answer) => interviewAnswerSchema.parse(answer))
   if (answers.length > 40) throw new Error('Too many discovery answers')
 
   const openai = getOpenAIClient()
+  const model = modelFor('discovery')
   const response = await openai.responses.parse({
-    model: modelFor('discovery'),
+    model,
     instructions: SYSTEM_INSTRUCTIONS,
     input: JSON.stringify({
       initialRequest: prompt,
@@ -146,5 +148,9 @@ export async function advanceEmployeeDiscovery(input: { prompt: string; answers?
   if (!response.output_parsed) throw new Error('Employee discovery returned no structured output')
   const turn = sanitizeTurn(interviewTurnResultSchema.parse(response.output_parsed))
   validateTurn(turn)
-  return { turn, specification: normalizeSpecification(turn) }
+  return {
+    turn,
+    specification: normalizeSpecification(turn),
+    usage: meterAIUsage('discovery', model, response.usage),
+  }
 }
