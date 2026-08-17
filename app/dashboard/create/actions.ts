@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentOrganizationId } from '@/lib/auth/current-organization'
+import type { Json } from '@/lib/database.types'
 
 export type EmployeePlan = {
   name: string
@@ -70,12 +71,15 @@ export async function saveEmployee(input: unknown) {
     goal: input.goal.trim(),
   }
 
+  // The object has been fully runtime-validated above and only contains JSON-safe fields.
+  const specification = plan as unknown as Json
+
   const { data, error } = await supabase.rpc('create_employee_with_version', {
     p_organization_id: organizationId,
     p_name: plan.name,
     p_role: plan.role,
     p_goal: plan.goal,
-    p_specification: plan,
+    p_specification: specification,
   })
 
   if (error) {
