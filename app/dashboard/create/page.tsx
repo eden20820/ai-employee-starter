@@ -29,6 +29,7 @@ export default function CreateEmployee() {
   const [understanding, setUnderstanding] = useState<InterviewUnderstanding | null>(null)
   const [answers, setAnswers] = useState<InterviewAnswer[]>([])
   const [draftAnswers, setDraftAnswers] = useState<Record<string, DraftAnswer>>({})
+  const [demoMode, setDemoMode] = useState(false)
   const [error, setError] = useState('')
   const [isGenerating, startGenerating] = useTransition()
   const [isCreating, startCreating] = useTransition()
@@ -36,6 +37,7 @@ export default function CreateEmployee() {
   function applyInterviewResult(result: Awaited<ReturnType<typeof advanceEmployeeInterview>>) {
     setUnderstanding(result.understanding)
     setQuestions(result.questions)
+    setDemoMode(result.demoMode)
     setDraftAnswers({})
     if (result.status === 'ready') {
       if (!result.specification) throw new Error('No employee specification returned')
@@ -99,7 +101,7 @@ export default function CreateEmployee() {
   }
 
   function createEmployee() {
-    if (!plan) return
+    if (!plan || demoMode) return
     setError('')
     startCreating(async () => {
       try {
@@ -143,6 +145,8 @@ export default function CreateEmployee() {
   return <div className="shell"><Sidebar active="create"/><main className="main create-wrap">
     <div><div className="eyebrow">Employee Builder</div><h1 className="h1">What employee do you need?</h1><p className="muted">Start with a simple description. AI Employee will interview you only about the details that materially change how this employee should work.</p></div>
 
+    {demoMode && <div className="card" style={{marginBottom:14}}><strong>Preview demo mode</strong><p className="muted" style={{marginBottom:0}}>Authentication is intentionally bypassed only for the Employee Builder in this Vercel Preview. You can test the full AI discovery interview and specification generation. Database persistence remains disabled until you sign in.</p></div>}
+
     <div className="card promptbox">
       <textarea value={text} onChange={e=>setText(e.target.value)} disabled={isGenerating || answers.length > 0}/>
       <div className="actions"><button className="button" disabled={isGenerating || text.trim().length < 10} onClick={startInterview}>{isGenerating && questions.length === 0 ? 'Understanding the role…' : 'Start employee setup →'}</button></div>
@@ -179,7 +183,7 @@ export default function CreateEmployee() {
         <div className="card"><div className="section-title">Approval rules</div>{plan.approvalRules.length === 0 ? <p className="muted">No conditional approval rules.</p> : plan.approvalRules.map(rule => <p key={rule.id}><strong>{rule.reason}</strong><br/><span className="muted">{rule.condition.field} {rule.condition.operator} {String(rule.condition.value)}</span></p>)}</div>
         <div className="card"><div className="section-title">Constraints</div><ul className="steps">{plan.constraints.map(item => <li key={item}>{item}</li>)}</ul><div className="section-title">Success criteria</div><ul className="steps">{plan.successCriteria.map(item => <li key={item}>{item}</li>)}</ul></div>
       </div>
-      <div className="card" style={{marginTop:14}}><div className="actions"><button className="button" disabled={isCreating} onClick={createEmployee}>{isCreating ? 'Creating…' : 'Create employee'}</button><button className="button secondary" disabled={isCreating} onClick={startInterview}>Restart discovery</button></div><div className="tiny">The employee is created only after the discovery interview produces a specification that passes our canonical validation. No external action is executed at this stage.</div></div>
+      <div className="card" style={{marginTop:14}}><div className="actions"><button className="button" disabled={isCreating || demoMode} onClick={createEmployee}>{demoMode ? 'Sign in later to create employee' : isCreating ? 'Creating…' : 'Create employee'}</button><button className="button secondary" disabled={isCreating} onClick={startInterview}>Restart discovery</button></div><div className="tiny">The employee is created only after the discovery interview produces a specification that passes our canonical validation. No external action is executed at this stage.</div></div>
     </div>}
   </main></div>
 }
