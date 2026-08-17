@@ -1,3 +1,18 @@
+create or replace function public.is_org_member(target_org uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organization_members
+    where organization_id = target_org
+      and user_id = auth.uid()
+  );
+$$;
+
 create table if not exists public.ai_usage_events (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -12,17 +27,16 @@ create table if not exists public.ai_usage_events (
   created_at timestamptz not null default now()
 );
 
-create index if not exists ai_usage_events_org_created_idx
-  on public.ai_usage_events(organization_id, created_at desc);
-create index if not exists ai_usage_events_employee_created_idx
-  on public.ai_usage_events(employee_id, created_at desc)
-  where employee_id is not null;
+create index if not exists ai_usage_events_org_created_idx on public.ai_usage_events(organization_id, created_at desc);
+create index if not exists ai_usage_events_employee_created_idx on public.ai_usage_events(employee_id, created_at desc) where employee_id is not null;
 
 alter table public.ai_usage_events enable row level security;
 
+drop policy if exists "ai_usage_org_select" on public.ai_usage_events;
 create policy "ai_usage_org_select" on public.ai_usage_events
 for select using (public.is_org_member(organization_id));
 
+drop policy if exists "ai_usage_org_insert" on public.ai_usage_events;
 create policy "ai_usage_org_insert" on public.ai_usage_events
 for insert with check (
   public.is_org_member(organization_id)
