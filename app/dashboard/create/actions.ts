@@ -9,14 +9,36 @@ import {
   parseEmployeeSpecification,
   type EmployeeSpecification,
 } from '@/lib/employees/specification'
+import { generateEmployeeSpecification } from '@/lib/employees/generate'
 
-export async function saveEmployee(input: unknown) {
-  const specification: EmployeeSpecification = parseEmployeeSpecification(input)
-
+async function requireAuthenticatedUser() {
   const supabase = await createClient()
   const { data: claimsData } = await supabase.auth.getClaims()
   if (!claimsData?.claims) redirect('/login')
+  return supabase
+}
 
+export async function generateEmployeePlan(prompt: string) {
+  await requireAuthenticatedUser()
+
+  try {
+    const { result, specification } = await generateEmployeeSpecification(prompt)
+    return {
+      status: result.status,
+      clarificationQuestions: result.clarificationQuestions,
+      specification,
+    }
+  } catch (error) {
+    console.error('generateEmployeePlan failed', {
+      message: error instanceof Error ? error.message : 'unknown_error',
+    })
+    throw new Error('Unable to generate employee plan')
+  }
+}
+
+export async function saveEmployee(input: unknown) {
+  const specification: EmployeeSpecification = parseEmployeeSpecification(input)
+  const supabase = await requireAuthenticatedUser()
   const organizationId = await getCurrentOrganizationId()
 
   const { data, error } = await supabase.rpc('create_employee_with_version', {
