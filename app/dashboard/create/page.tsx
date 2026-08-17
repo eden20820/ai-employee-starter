@@ -8,6 +8,7 @@ import type { EmployeeSpecification } from '@/lib/employees/specification'
 import type { InterviewAnswer, InterviewQuestion, InterviewUnderstanding } from '@/lib/employees/interview'
 
 type DraftAnswer = string | string[] | boolean | number
+type UsageItem = NonNullable<Awaited<ReturnType<typeof advanceEmployeeInterview>>['usage']>
 
 function permissionLabel(mode: EmployeeSpecification['permissions'][number]['mode']) {
   if (mode === 'allowed') return 'Allowed'
@@ -23,14 +24,20 @@ export default function CreateEmployee() {
   const [understanding, setUnderstanding] = useState<InterviewUnderstanding | null>(null)
   const [answers, setAnswers] = useState<InterviewAnswer[]>([])
   const [draftAnswers, setDraftAnswers] = useState<Record<string, DraftAnswer>>({})
+  const [usageEvents, setUsageEvents] = useState<UsageItem[]>([])
   const [demoMode, setDemoMode] = useState(false)
   const [error, setError] = useState('')
   const [isGenerating, startGenerating] = useTransition()
   const [isCreating, startCreating] = useTransition()
 
+  const totalCost = usageEvents.reduce((sum, usage) => sum + usage.estimatedCostUsd, 0)
+  const totalTokens = usageEvents.reduce((sum, usage) => sum + usage.inputTokens + usage.outputTokens, 0)
+  const lastUsage = usageEvents.at(-1)
+
   function applyInterviewResult(result: Awaited<ReturnType<typeof advanceEmployeeInterview>>) {
     setDemoMode(result.demoMode)
     if (result.status === 'error') { setError(result.errorMessage || 'Could not continue employee discovery'); return }
+    if (result.usage) setUsageEvents((current) => [...current, result.usage as UsageItem])
     setError(''); setUnderstanding(result.understanding); setQuestions(result.questions); setDraftAnswers({})
     if (result.status === 'ready') {
       if (!result.specification) { setError('No employee specification returned'); return }
@@ -39,7 +46,7 @@ export default function CreateEmployee() {
   }
 
   function startInterview() {
-    setError(''); setPlan(null); setQuestions([]); setUnderstanding(null); setAnswers([]); setDraftAnswers({})
+    setError(''); setPlan(null); setQuestions([]); setUnderstanding(null); setAnswers([]); setDraftAnswers({}); setUsageEvents([])
     startGenerating(async () => {
       try { applyInterviewResult(await advanceEmployeeInterview(text, [])) }
       catch (err) { setError(err instanceof Error ? err.message : 'Could not start employee discovery') }
@@ -106,10 +113,11 @@ export default function CreateEmployee() {
     {demoMode && <div className="card" style={{marginBottom:14}}><strong>Preview demo mode</strong><p className="muted" style={{marginBottom:0}}>Authentication is intentionally bypassed only for the Employee Builder in this Vercel Preview. You can test discovery and plan generation. Database persistence and tool connection remain disabled until you sign in.</p></div>}
 
     <div className="card promptbox"><textarea value={text} placeholder="Example: I need an employee that reviews my inbox, identifies urgent messages, organizes what needs attention, and drafts replies without sending them." onChange={e=>setText(e.target.value)} disabled={isGenerating || answers.length > 0}/><div className="actions"><button className="button" disabled={isGenerating || text.trim().length < 10} onClick={startInterview}>{isGenerating && questions.length === 0 ? 'Understanding the role…' : 'Start employee setup →'}</button></div></div>
+
+    {usageEvents.length > 0 && <div className="card" style={{marginTop:14}}><div className="eyebrow">AI usage · development visibility</div><div style={{display:'flex',gap:24,flexWrap:'wrap'}}><div><strong>${totalCost.toFixed(6)}</strong><div className="tiny">estimated creation cost so far</div></div><div><strong>{totalTokens.toLocaleString()}</strong><div className="tiny">tokens across {usageEvents.length} AI call{usageEvents.length===1?'':'s'}</div></div><div><strong>{lastUsage?.model}</strong><div className="tiny">model used in latest round</div></div></div><div className="tiny" style={{marginTop:10}}>Cost is estimated from token usage and our configured model pricing. In authenticated mode, each event is also stored per organization for SaaS cost tracking.</div></div>}
+
     {error && <div className="card" style={{marginTop:14,color:'#b91c1c'}}>{error}</div>}
-
     {understanding && !plan && <div className="card" style={{marginTop:14}}><div className="eyebrow">What I’ve learned</div><strong>{understanding.roleSummary}</strong>{understanding.knownFacts.length > 0 && <ul className="steps">{understanding.knownFacts.map(fact => <li key={fact}>{fact}</li>)}</ul>}<div className="tiny">This summary is updated after every round. Tool-specific setup is intentionally deferred until the employee plan is approved.</div></div>}
-
     {questions.length > 0 && !plan && <div className="card" style={{marginTop:14}}><div className="eyebrow">Smart discovery · Define the job</div><h2>Let’s define how this employee should work</h2><p className="muted">We only ask about decisions that change the employee’s business behavior, authority or safety.</p><div style={{display:'grid',gap:20,marginTop:18}}>{questions.map((question,index)=><div key={question.id}><div className="section-title">{index+1}. {question.question}{question.required?' *':''}</div>{question.helpText&&<p className="muted">{question.helpText}</p>}{renderQuestion(question)}</div>)}</div><div className="actions" style={{marginTop:22}}><button className="button" disabled={isGenerating} onClick={continueInterview}>{isGenerating?'Analyzing answers…':'Continue →'}</button><button className="button secondary" disabled={isGenerating} onClick={startInterview}>Restart</button></div></div>}
 
     {plan && <div className="plan"><div className="card"><div className="eyebrow">Step 2 · Review employee plan · Specification v{plan.schemaVersion}</div><h2>{plan.name}</h2><div className="muted">{plan.role}</div><p>{plan.goal}</p><div className="tiny">Concrete Gmail accounts, Google Sheets and field mappings are configured only after this business plan is accepted.</div></div><div className="plan-grid" style={{marginTop:14}}><div className="card"><div className="section-title">Trigger</div><strong>{plan.trigger.type}</strong><p className="muted">{plan.trigger.description}</p><div className="section-title">Required tools</div>{plan.tools.map(tool=><span className="tag" key={tool.id}>{tool.id}</span>)}</div><div className="card"><div className="section-title">Permissions</div>{plan.permissions.map(permission=><div className="permission" key={permission.capability}><span>{permission.capability}</span><span className={permission.mode==='allowed'?'yes':'no'}>{permissionLabel(permission.mode)}</span></div>)}</div></div><div className="card" style={{marginTop:14}}><div className="section-title">Workflow</div><ol className="steps">{plan.workflow.map(step=><li key={step.id}>{step.instruction}</li>)}</ol></div><div className="plan-grid" style={{marginTop:14}}><div className="card"><div className="section-title">Approval rules</div>{plan.approvalRules.length===0?<p className="muted">No conditional approval rules.</p>:plan.approvalRules.map(rule=><p key={rule.id}><strong>{rule.reason}</strong><br/><span className="muted">{rule.condition.field} {rule.condition.operator} {String(rule.condition.value)}</span></p>)}</div><div className="card"><div className="section-title">Constraints</div><ul className="steps">{plan.constraints.map(item=><li key={item}>{item}</li>)}</ul><div className="section-title">Success criteria</div><ul className="steps">{plan.successCriteria.map(item=><li key={item}>{item}</li>)}</ul></div></div><div className="card" style={{marginTop:14}}><div className="section-title">Next: Connect tools</div><p className="muted">After creating the employee, the next setup phase will connect the actual Gmail and Google Sheet resources and propose mappings from the selected data.</p><div className="actions"><button className="button" disabled={isCreating||demoMode} onClick={createEmployee}>{demoMode?'Sign in later to create employee':isCreating?'Creating…':'Approve plan & create employee'}</button><button className="button secondary" disabled={isCreating} onClick={startInterview}>Restart discovery</button></div><div className="tiny">No external action is executed during employee creation.</div></div></div>}
