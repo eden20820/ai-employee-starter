@@ -12,6 +12,10 @@ import {
 import { advanceEmployeeDiscovery } from '@/lib/employees/discovery'
 import type { InterviewAnswer } from '@/lib/employees/interview'
 
+function isBuilderDemoMode() {
+  return process.env.VERCEL_ENV === 'preview'
+}
+
 async function requireAuthenticatedUser() {
   const supabase = await createClient()
   const { data: claimsData } = await supabase.auth.getClaims()
@@ -23,7 +27,8 @@ export async function advanceEmployeeInterview(
   prompt: string,
   answers: InterviewAnswer[] = [],
 ) {
-  await requireAuthenticatedUser()
+  const demoMode = isBuilderDemoMode()
+  if (!demoMode) await requireAuthenticatedUser()
 
   try {
     const { turn, specification } = await advanceEmployeeDiscovery({ prompt, answers })
@@ -32,6 +37,7 @@ export async function advanceEmployeeInterview(
       understanding: turn.understanding,
       questions: turn.questions,
       specification,
+      demoMode,
     }
   } catch (error) {
     console.error('advanceEmployeeInterview failed', {
@@ -42,6 +48,8 @@ export async function advanceEmployeeInterview(
 }
 
 export async function saveEmployee(input: unknown) {
+  // Persistence always requires a real authenticated tenant. Demo mode can never
+  // bypass this boundary.
   const specification: EmployeeSpecification = parseEmployeeSpecification(input)
   const supabase = await requireAuthenticatedUser()
   const organizationId = await getCurrentOrganizationId()
