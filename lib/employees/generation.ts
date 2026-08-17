@@ -69,10 +69,9 @@ export function finalizeGeneratedSpecification(
 
   const normalized = {
     ...result.specification,
-    workflow: result.specification.workflow.map((step) => ({
-      ...step,
-      ...(step.tool ? { tool: step.tool } : {}),
-    })),
+    workflow: result.specification.workflow.map(({ tool, ...step }) =>
+      tool ? { ...step, tool } : step,
+    ),
   }
 
   return employeeSpecificationSchema.parse(normalized)
