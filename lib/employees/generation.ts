@@ -5,7 +5,7 @@ import {
   type EmployeeSpecification,
 } from './specification'
 
-const aiToolIdSchema = z.enum([
+export const aiToolIdSchema = z.enum([
   'gmail.read_message',
   'gmail.search_messages',
   'gmail.create_draft',
@@ -16,7 +16,7 @@ const aiToolIdSchema = z.enum([
   'system.request_approval',
 ])
 
-const aiSpecificationSchema = z.object({
+export const aiSpecificationSchema = z.object({
   schemaVersion: z.literal(EMPLOYEE_SPECIFICATION_VERSION),
   name: z.string().min(2).max(100),
   role: z.string().min(2).max(160),
