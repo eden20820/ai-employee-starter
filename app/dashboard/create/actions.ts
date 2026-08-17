@@ -23,6 +23,20 @@ async function requireAuthenticatedUser() {
   return supabase
 }
 
+function discoveryErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : ''
+
+  if (message.includes('429') || message.toLowerCase().includes('quota')) {
+    return 'OpenAI API billing or quota is not available for this project yet. Add API credits in the OpenAI Platform billing settings, then try again.'
+  }
+
+  if (message.toLowerCase().includes('api key')) {
+    return 'The OpenAI API key is missing or invalid for this Preview deployment.'
+  }
+
+  return 'The AI discovery interview could not be generated. Please try again.'
+}
+
 export async function advanceEmployeeInterview(
   prompt: string,
   answers: InterviewAnswer[] = [],
@@ -38,12 +52,21 @@ export async function advanceEmployeeInterview(
       questions: turn.questions,
       specification,
       demoMode,
+      errorMessage: null,
     }
   } catch (error) {
     console.error('advanceEmployeeInterview failed', {
       message: error instanceof Error ? error.message : 'unknown_error',
     })
-    throw new Error('Unable to continue employee discovery')
+
+    return {
+      status: 'error' as const,
+      understanding: null,
+      questions: [],
+      specification: null,
+      demoMode,
+      errorMessage: discoveryErrorMessage(error),
+    }
   }
 }
 
