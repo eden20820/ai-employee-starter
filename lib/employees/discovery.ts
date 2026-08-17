@@ -12,6 +12,9 @@ import {
 } from './interview'
 import { employeeSpecificationSchema, type EmployeeSpecification } from './specification'
 
+const MAX_QUESTION_ROUNDS = 3
+const ROUND_ID_PATTERN = /^r(\d+)_/
+
 const SYSTEM_INSTRUCTIONS = `You are the senior business-process discovery interviewer for AI Employee, a commercial SaaS platform that turns a natural-language job description into a governed AI Employee.
 
 Your job is NOT to build the employee immediately and NOT to produce a generic questionnaire. Progressively discover only the BUSINESS requirements needed to configure a safe, precise, useful employee.
@@ -24,6 +27,13 @@ PRODUCT FLOW
 2. EMPLOYEE PLAN — present the resulting business behavior and governance for review.
 3. CONNECT TOOLS — only after plan approval, connect concrete Gmail/Google Sheets resources and mappings.
 You are responsible ONLY for phase 1.
+
+DISCOVERY HAS A HARD LIMIT OF THREE QUESTION ROUNDS.
+- Round 1: establish the major operating boundaries.
+- Round 2: adapt to the answers and resolve the highest-value remaining business decisions.
+- Round 3: ask ONLY questions that are still critical for permissions, safety, scope, or an executable workflow.
+- After round 3 has been answered, you MUST finalize the Employee Specification. Do not ask a fourth round.
+The goal is not exhaustive interviewing. Prefer a safe useful plan with explicit conservative constraints over endless optional questions.
 
 CURRENT PRODUCT BOUNDARY
 - The MVP supports Gmail and Google Sheets only.
@@ -44,6 +54,7 @@ QUESTION SELECTION
 - Later rounds MUST adapt to previous answers.
 - Avoid cosmetic questions and technical setup details.
 - Never ask about a business workflow that is not grounded in the current initialRequest/answers.
+- On round 3, omit nice-to-have preferences and ask only unresolved decisions necessary for a safe executable plan.
 
 QUESTION DESIGN
 Use single_choice for mutually exclusive policies, multiple_choice for capabilities/categories, boolean for true yes/no policy, number for thresholds/delays/limits, and text only when choices cannot faithfully represent a business-specific rule. Choice options must describe business behavior, not technical mechanisms.
@@ -53,6 +64,7 @@ SAFETY & AUTHORITY
 - External email sending defaults toward approval unless the user explicitly establishes a safe automatic-send boundary.
 - Never invent thresholds, recipients, schedules, spreadsheet structures, supplier lists, escalation contacts, or business rules.
 - Distinguish drafting from sending and reading from modifying data.
+- If a non-critical detail remains unknown when finalizing after round 3, use a conservative constraint or defer it to later configuration rather than inventing it.
 
 READINESS BAR
 Return ready once you can produce a safe, coherent Employee Specification without inventing material BUSINESS facts. Do NOT delay readiness because concrete accounts, Sheet/tab names, exact columns, OAuth connections, or technical mappings are unknown. Stop when remaining unknowns are implementation details or optional preferences.
@@ -61,8 +73,9 @@ UNDERSTANDING SUMMARY
 roleSummary and knownFacts are user-facing. Include only facts grounded in the current initialRequest and current answers. Never include unrelated domain assumptions.
 
 OUTPUT
-Return status "questions" when material business requirements are missing; specification must be null.
-Return status "ready" when the readiness bar is met; questions must be empty and specification complete.`
+Return status "questions" when material business requirements are missing and there are question rounds remaining; specification must be null.
+Return status "ready" when the readiness bar is met; questions must be empty and specification complete.
+When interviewState.forceFinalize is true, status MUST be "ready", questions MUST be empty, and specification MUST be complete.`
 
 const deferredConfigPatterns = [
   /spreadsheet\s*(name|url|link|id)/i,
@@ -75,14 +88,37 @@ const deferredConfigPatterns = [
   /credentials?/i,
 ]
 
+function completedQuestionRounds(answers: InterviewAnswer[]) {
+  let highestRound = 0
+  for (const answer of answers) {
+    const match = answer.questionId.match(ROUND_ID_PATTERN)
+    if (match) highestRound = Math.max(highestRound, Number(match[1]))
+  }
+  return highestRound
+}
+
 function isDeferredConfigurationQuestion(question: { question: string; helpText: string }) {
   const text = `${question.question} ${question.helpText}`
   return deferredConfigPatterns.some((pattern) => pattern.test(text))
 }
 
-function sanitizeTurn(turn: InterviewTurnResult): InterviewTurnResult {
+function sanitizeTurn(turn: InterviewTurnResult, nextRound: number, forceFinalize: boolean): InterviewTurnResult {
+  if (forceFinalize) {
+    if (turn.status !== 'ready') {
+      throw new Error('Discovery attempted to exceed the three-round question limit')
+    }
+    return turn
+  }
+
   if (turn.status !== 'questions') return turn
-  const questions = turn.questions.filter((question) => !isDeferredConfigurationQuestion(question))
+  const questions = turn.questions
+    .filter((question) => !isDeferredConfigurationQuestion(question))
+    .map((question) => ({
+      ...question,
+      question: question.question,
+      id: `r${nextRound}_${question.id.replace(ROUND_ID_PATTERN, '')}`,
+    }))
+
   if (questions.length === 0) throw new Error('Discovery returned only deferred tool-configuration questions')
   return { ...turn, questions }
 }
@@ -118,6 +154,10 @@ export async function advanceEmployeeDiscovery(input: { prompt: string; answers?
   const answers = (input.answers ?? []).map((answer) => interviewAnswerSchema.parse(answer))
   if (answers.length > 40) throw new Error('Too many discovery answers')
 
+  const completedRounds = completedQuestionRounds(answers)
+  const forceFinalize = completedRounds >= MAX_QUESTION_ROUNDS
+  const nextRound = Math.min(completedRounds + 1, MAX_QUESTION_ROUNDS)
+
   const openai = getOpenAIClient()
   const model = modelFor('discovery')
   const response = await openai.responses.parse({
@@ -129,12 +169,20 @@ export async function advanceEmployeeDiscovery(input: { prompt: string; answers?
       interviewState: {
         answeredQuestionIds: answers.map((answer) => answer.questionId),
         answerCount: answers.length,
-        currentPhase: 'business_discovery',
+        completedQuestionRounds: completedRounds,
+        maximumQuestionRounds: MAX_QUESTION_ROUNDS,
+        nextQuestionRound: forceFinalize ? null : nextRound,
+        forceFinalize,
+        currentPhase: forceFinalize ? 'employee_plan_finalization' : 'business_discovery',
         deferredPhase: 'connect_tools',
         domainRule: 'Use only concepts grounded in initialRequest and current previousAnswers. Ignore all unrelated examples or prior-session domains.',
-        instruction: answers.length === 0
-          ? 'Generate the first high-value BUSINESS discovery round. Defer all concrete tool/resource configuration.'
-          : 'Reassess business requirement gaps using every current-session answer. Ask only adaptive BUSINESS follow-ups still material, or return ready. Defer concrete tool configuration.',
+        instruction: forceFinalize
+          ? 'All three question rounds have been answered. Do not ask any more questions. Produce the safest complete Employee Specification now using only known facts. Treat unresolved non-critical details conservatively or defer them to Connect Tools.'
+          : nextRound === 1
+            ? 'Generate question round 1: the highest-value BUSINESS discovery questions. Defer all concrete tool/resource configuration.'
+            : nextRound === 2
+              ? 'Generate question round 2: adapt strictly to the previous answers and resolve the highest-value remaining business decisions.'
+              : 'Generate the FINAL question round 3. Ask only unresolved questions critical to permissions, safety, scope, or an executable workflow. There will be no fourth question round.',
       },
     }),
     store: false,
@@ -146,8 +194,14 @@ export async function advanceEmployeeDiscovery(input: { prompt: string; answers?
     throw new Error('Employee discovery did not complete')
   }
   if (!response.output_parsed) throw new Error('Employee discovery returned no structured output')
-  const turn = sanitizeTurn(interviewTurnResultSchema.parse(response.output_parsed))
+
+  const turn = sanitizeTurn(
+    interviewTurnResultSchema.parse(response.output_parsed),
+    nextRound,
+    forceFinalize,
+  )
   validateTurn(turn)
+
   return {
     turn,
     specification: normalizeSpecification(turn),
