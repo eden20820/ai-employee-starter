@@ -7,7 +7,6 @@ import { advanceEmployeeInterview, saveEmployee } from './actions'
 import type { EmployeeSpecification } from '@/lib/employees/specification'
 import type { InterviewAnswer, InterviewQuestion, InterviewUnderstanding } from '@/lib/employees/interview'
 
-const example = 'I need an employee that monitors supplier emails, identifies quotations, extracts the important commercial details and keeps my purchasing spreadsheet up to date.'
 type DraftAnswer = string | string[] | boolean | number
 
 function permissionLabel(mode: EmployeeSpecification['permissions'][number]['mode']) {
@@ -18,7 +17,7 @@ function permissionLabel(mode: EmployeeSpecification['permissions'][number]['mod
 
 export default function CreateEmployee() {
   const router = useRouter()
-  const [text, setText] = useState(example)
+  const [text, setText] = useState('')
   const [plan, setPlan] = useState<EmployeeSpecification | null>(null)
   const [questions, setQuestions] = useState<InterviewQuestion[]>([])
   const [understanding, setUnderstanding] = useState<InterviewUnderstanding | null>(null)
@@ -106,7 +105,7 @@ export default function CreateEmployee() {
 
     {demoMode && <div className="card" style={{marginBottom:14}}><strong>Preview demo mode</strong><p className="muted" style={{marginBottom:0}}>Authentication is intentionally bypassed only for the Employee Builder in this Vercel Preview. You can test discovery and plan generation. Database persistence and tool connection remain disabled until you sign in.</p></div>}
 
-    <div className="card promptbox"><textarea value={text} onChange={e=>setText(e.target.value)} disabled={isGenerating || answers.length > 0}/><div className="actions"><button className="button" disabled={isGenerating || text.trim().length < 10} onClick={startInterview}>{isGenerating && questions.length === 0 ? 'Understanding the role…' : 'Start employee setup →'}</button></div></div>
+    <div className="card promptbox"><textarea value={text} placeholder="Example: I need an employee that reviews my inbox, identifies urgent messages, organizes what needs attention, and drafts replies without sending them." onChange={e=>setText(e.target.value)} disabled={isGenerating || answers.length > 0}/><div className="actions"><button className="button" disabled={isGenerating || text.trim().length < 10} onClick={startInterview}>{isGenerating && questions.length === 0 ? 'Understanding the role…' : 'Start employee setup →'}</button></div></div>
     {error && <div className="card" style={{marginTop:14,color:'#b91c1c'}}>{error}</div>}
 
     {understanding && !plan && <div className="card" style={{marginTop:14}}><div className="eyebrow">What I’ve learned</div><strong>{understanding.roleSummary}</strong>{understanding.knownFacts.length > 0 && <ul className="steps">{understanding.knownFacts.map(fact => <li key={fact}>{fact}</li>)}</ul>}<div className="tiny">This summary is updated after every round. Tool-specific setup is intentionally deferred until the employee plan is approved.</div></div>}
